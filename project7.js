@@ -1,7 +1,3 @@
-// ==============================================================================
-// 0. UTILITY MATH FUNCTIONS (Column-Major)
-// ==============================================================================
-
 function scaleMatrix(sx, sy, sz) {
 	return new Float32Array([
 		sx, 0, 0, 0,
@@ -10,6 +6,7 @@ function scaleMatrix(sx, sy, sz) {
 		0, 0, 0, 1
 	]);
 }
+
 function createVec3(x = 0, y = 0, z = 0) {
 	return { x, y, z };
 }
@@ -39,10 +36,10 @@ function multiplyMatrices(a, b) {
 
 function translationMatrix(tx, ty, tz) {
 	return new Float32Array([
-		1, 0, 0, 0, // Col 0
-		0, 1, 0, 0, // Col 1
-		0, 0, 1, 0, // Col 2
-		tx, ty, tz, 1 // Col 3 (Translation)
+		1, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		tx, ty, tz, 1
 	]);
 }
 
@@ -50,10 +47,10 @@ function rotationMatrixY(angle) {
 	let cosA = Math.cos(angle);
 	let sinA = Math.sin(angle);
 	return new Float32Array([
-		cosA, 0, -sinA, 0, // Col 0
-		0, 1, 0, 0, // Col 1
-		sinA, 0, cosA, 0, // Col 2
-		0, 0, 0, 1 // Col 3
+		cosA, 0, -sinA, 0,
+		0, 1, 0, 0,
+		sinA, 0, cosA, 0,
+		0, 0, 0, 1
 	]);
 }
 
@@ -86,7 +83,6 @@ function dot(a, b) {
 	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-// Column-major lookAt (OpenGL-style)
 function lookAt(eye, center, up) {
 	const f = normalizeVec3(
 		center.x - eye.x,
@@ -102,13 +98,9 @@ function lookAt(eye, center, up) {
 
 	const m = new Float32Array(16);
 
-	// Column 0 (Right vector)
 	m[0] = s.x; m[1] = s.y; m[2] = s.z; m[3] = 0;
-	// Column 1 (Up vector)
 	m[4] = u.x; m[5] = u.y; m[6] = u.z; m[7] = 0;
-	// Column 2 (Forward vector - negated for RH system)
 	m[8] = -f.x; m[9] = -f.y; m[10] = -f.z; m[11] = 0;
-	// Column 3 (Translation)
 	m[12] = -dot(s, eye);
 	m[13] = -dot(u, eye);
 	m[14] = dot(f, eye);
@@ -118,10 +110,9 @@ function lookAt(eye, center, up) {
 }
 
 function cameraCollides(newX, newZ, cameraY, scene) {
-	const radius = 0.2; // how "fat" the camera is
+	const radius = 0.2;
 
 	for (const obj of scene.gameObjects) {
-		// IMPORTANT: Ignore collision with the light marker
 		if (obj.isLight) continue;
 
 		const t = obj.transform;
@@ -137,18 +128,18 @@ function cameraCollides(newX, newZ, cameraY, scene) {
 		if (Math.abs(dx) <= halfX &&
 			Math.abs(dy) <= halfY &&
 			Math.abs(dz) <= halfZ) {
-			return true;
+			return obj;
 		}
 	}
-	return false;
+	return null;
 }
 
 class Transform {
 	constructor(x = 0, y = 0, z = 0) {
 		this.position = createVec3(x, y, z);
-		this.rotation = createVec3(0, 0, 0); // Rotation in radians
+		this.rotation = createVec3(0, 0, 0);
 		this.scale = createVec3(1, 1, 1);
-		this.modelMatrix = new Float32Array(16); // Will store combined T*R*S
+		this.modelMatrix = new Float32Array(16);
 		this.recalculateModelMatrix();
 	}
 
@@ -171,44 +162,23 @@ class Camera {
 		this.far = 100;
 		this.projectionMatrix = perspectiveMatrix(this.fov, this.aspect, this.near, this.far);
 
-		// Stand back from the cube
 		this.position = createVec3(0, 0, 5);
-
-		// Mouse rotation (in radians)
-		this.yaw = 0;   // left/right
-		this.pitch = 0; // up/down
-
 		this.forward = createVec3(0, 0, -1);
+		this.up = createVec3(0, 1, 0);
 
 		this.recalculateViewMatrix();
 	}
 
 	recalculateViewMatrix() {
-		// Compute forward direction from yaw + pitch
-		const cosPitch = Math.cos(this.pitch);
-		const sinPitch = Math.sin(this.pitch);
-		const cosYaw = Math.cos(this.yaw);
-		const sinYaw = Math.sin(this.yaw);
-
-		this.forward.x = cosPitch * sinYaw;
-		this.forward.y = sinPitch;
-		this.forward.z = -cosPitch * cosYaw; // yaw=0, pitch=0 => (0,0,-1)
-
 		const center = {
 			x: this.position.x + this.forward.x,
 			y: this.position.y + this.forward.y,
 			z: this.position.z + this.forward.z,
 		};
 
-		const up = { x: 0, y: 1, z: 0 };
-
-		this.viewMatrix = lookAt(this.position, center, up);
+		this.viewMatrix = lookAt(this.position, center, this.up);
 	}
 }
-
-// ==============================================================================
-// 2. WEBGL BUFFER WRAPPERS (VBO, EBO, VAO - Adapted from your original)
-// ==============================================================================
 
 class Shader {
 	constructor(gl, vs, fs) {
@@ -236,7 +206,6 @@ class Shader {
 			console.error("Program Link Error:", gl.getProgramInfoLog(this.program));
 		}
 
-		// Get uniform/attribute locations once
 		this.locations = {
 			position: gl.getAttribLocation(this.program, "a_position"),
 			color: gl.getAttribLocation(this.program, "a_color"),
@@ -290,56 +259,17 @@ class VAO {
 	}
 }
 
-// ==============================================================================
-// 3. CORE ASSET CLASSES (Geometry, Material)
-// ==============================================================================
-
 class Input {
-	// RESTORED: Full mouse and pointer lock handling
 	constructor(canvas) {
 		this.canvas = canvas;
 		this.keys = new Map();
-		this.mouse = new Map();
-		this.mouse.set("dx", 0);
-		this.mouse.set("dy", 0);
-		this.pointerLocked = false;
 
-		// Keyboard listeners
 		window.addEventListener("keydown", this.onKeyDown.bind(this));
 		window.addEventListener("keyup", this.onKeyUp.bind(this));
-
-		// Pointer lock setup
-		this.canvas.addEventListener("click", () => {
-			this.canvas.requestPointerLock();
-			this.canvas.focus?.();
-		});
-
-		document.addEventListener("pointerlockchange", this.onPointerLockChange.bind(this));
-		document.addEventListener("pointerlockerror", () => {
-			console.error("Pointer lock failed");
-		});
-
-		// Mouse movement listener (pointer-locked)
-		document.addEventListener("mousemove", this.onMouseMove.bind(this));
 	}
 
 	getKeys() {
 		return this.keys;
-	}
-	getMouse() {
-		return this.mouse;
-	}
-	isPointerLocked() {
-		return this.pointerLocked;
-	}
-
-	onPointerLockChange() {
-		this.pointerLocked = (document.pointerLockElement === this.canvas);
-
-		if (!this.pointerLocked) {
-			this.mouse.set("dx", 0);
-			this.mouse.set("dy", 0);
-		}
 	}
 
 	onKeyDown(event) {
@@ -347,18 +277,6 @@ class Input {
 	}
 	onKeyUp(event) {
 		this.keys.set(event.key.toLowerCase(), false);
-	}
-	// Note: Mouse button listeners (onMouseDown/onMouseUp) were removed for brevity, as they weren't used for movement/rotation.
-
-	onMouseMove(event) {
-		if (!this.pointerLocked) return;
-
-		const dx = event.movementX || 0;
-		const dy = event.movementY || 0;
-
-		// Accumulate deltas. They are reset to 0 in gameLoop after use.
-		this.mouse.set("dx", dx);
-		this.mouse.set("dy", dy);
 	}
 }
 
@@ -372,15 +290,12 @@ class Geometry {
 		this.vao = new VAO(gl);
 
 		this.vao.bind();
-		this.ebo.bind(); // EBO is part of the VAO state
+		this.ebo.bind();
 
-		// Vertices are Position (3 floats) + Color (3 floats) = 6 floats
-		const stride = 6 * Float32Array.BYTES_PER_ELEMENT; // 24 bytes
-		const colorOffset = 3 * Float32Array.BYTES_PER_ELEMENT; // 12 bytes
+		const stride = 6 * Float32Array.BYTES_PER_ELEMENT;
+		const colorOffset = 3 * Float32Array.BYTES_PER_ELEMENT;
 
-		// Link Position (a_position)
 		this.vao.linkAttrib(this.vbo, attribLocations.position, 3, gl.FLOAT, stride, 0);
-		// Link Color (a_color)
 		this.vao.linkAttrib(this.vbo, attribLocations.color, 3, gl.FLOAT, stride, colorOffset);
 
 		this.vao.unbind();
@@ -402,23 +317,15 @@ class Material {
 		this.shader.activate();
 	}
 
-	// Called once per frame, before drawing the object
 	setUniforms(modelMatrix, viewMatrix, projectionMatrix) {
 		const gl = this.gl;
 
-		// Combine Model and View matrices here to create the u_modelViewMatrix
 		const modelViewMatrix = multiplyMatrices(viewMatrix, modelMatrix);
 
 		gl.uniformMatrix4fv(this.shader.locations.modelViewMatrix, false, modelViewMatrix);
 		gl.uniformMatrix4fv(this.shader.locations.projectionMatrix, false, projectionMatrix);
-
-		// Future: set texture uniforms, lighting uniforms, etc.
 	}
 }
-
-// ==============================================================================
-// 4. ENTITY CLASSES (GameObject)
-// ==============================================================================
 
 class GameObject {
 	constructor(gl, geometry, material) {
@@ -443,14 +350,12 @@ class GameObject {
 
 		const gl = this.gl;
 
-		// Is this object the light marker?
 		const isLight = this.isLight ? 1 : 0;
 		const isLightLoc = this.material.shader.locations.isLight;
 		if (isLightLoc) {
 			gl.uniform1i(isLightLoc, isLight);
 		}
 
-		// Set light position in VIEW space for shading
 		const lpLoc = this.material.shader.locations.lightPosView;
 		if (lpLoc) {
 			gl.uniform3f(lpLoc, lightPosView.x, lightPosView.y, lightPosView.z);
@@ -462,14 +367,9 @@ class GameObject {
 	}
 }
 
-// ==============================================================================
-// 5. ENGINE/SCENE CLASSES (Scene, Renderer)
-// ==============================================================================
-
 class Scene {
 	constructor() {
 		this.gameObjects = [];
-		// this.lights = []; // Future: for light sources
 	}
 
 	add(gameObject) {
@@ -498,104 +398,72 @@ class Renderer {
 	}
 }
 
-// ==============================================================================
-// 6. CUBE DATA
-// ==============================================================================
-
-// Cube Vertex Data (Position + Color)
 const cubeVertices = new Float32Array([
-	// Front face (Red)
-	-0.5, -0.5, 0.5, 1.0, 0.0, 0.0, // 0
-	0.5, -0.5, 0.5, 1.0, 0.0, 0.0, // 1
-	0.5, 0.5, 0.5, 1.0, 0.0, 0.0, // 2
-	-0.5, 0.5, 0.5, 1.0, 0.0, 0.0, // 3
+	-0.5, -0.5, 0.5, 1.0, 0.0, 0.0,
+	0.5, -0.5, 0.5, 1.0, 0.0, 0.0,
+	0.5, 0.5, 0.5, 1.0, 0.0, 0.0,
+	-0.5, 0.5, 0.5, 1.0, 0.0, 0.0,
 
-	// Back face (Green)
-	-0.5, -0.5, -0.5, 0.0, 1.0, 0.0, // 4
-	-0.5, 0.5, -0.5, 0.0, 1.0, 0.0, // 5
-	0.5, 0.5, -0.5, 0.0, 1.0, 0.0, // 6
-	0.5, -0.5, -0.5, 0.0, 1.0, 0.0, // 7
+	-0.5, -0.5, -0.5, 0.0, 1.0, 0.0,
+	-0.5, 0.5, -0.5, 0.0, 1.0, 0.0,
+	0.5, 0.5, -0.5, 0.0, 1.0, 0.0,
+	0.5, -0.5, -0.5, 0.0, 1.0, 0.0,
 
-	// Top face (Blue)
-	-0.5, 0.5, 0.5, 0.0, 0.0, 1.0, // 8
-	0.5, 0.5, 0.5, 0.0, 0.0, 1.0, // 9
-	0.5, 0.5, -0.5, 0.0, 0.0, 1.0, // 10
-	-0.5, 0.5, -0.5, 0.0, 0.0, 1.0, // 11
+	-0.5, 0.5, 0.5, 0.0, 0.0, 1.0,
+	0.5, 0.5, 0.5, 0.0, 0.0, 1.0,
+	0.5, 0.5, -0.5, 0.0, 0.0, 1.0,
+	-0.5, 0.5, -0.5, 0.0, 0.0, 1.0,
 
-	// Bottom face (Yellow)
-	-0.5, -0.5, 0.5, 1.0, 1.0, 0.0, // 12
-	0.5, -0.5, 0.5, 1.0, 1.0, 0.0, // 13
-	0.5, -0.5, -0.5, 1.0, 1.0, 0.0, // 14
-	-0.5, -0.5, -0.5, 1.0, 1.0, 0.0, // 15
+	-0.5, -0.5, 0.5, 1.0, 1.0, 0.0,
+	0.5, -0.5, 0.5, 1.0, 1.0, 0.0,
+	0.5, -0.5, -0.5, 1.0, 1.0, 0.0,
+	-0.5, -0.5, -0.5, 1.0, 1.0, 0.0,
 
-	// Right face (Cyan)
-	0.5, -0.5, 0.5, 0.0, 1.0, 1.0, // 16
-	0.5, 0.5, 0.5, 0.0, 1.0, 1.0, // 17
-	0.5, 0.5, -0.5, 0.0, 1.0, 1.0, // 18
-	0.5, -0.5, -0.5, 0.0, 1.0, 1.0, // 19
+	0.5, -0.5, 0.5, 0.0, 1.0, 1.0,
+	0.5, 0.5, 0.5, 0.0, 1.0, 1.0,
+	0.5, 0.5, -0.5, 0.0, 1.0, 1.0,
+	0.5, -0.5, -0.5, 0.0, 1.0, 1.0,
 
-	// Left face (Magenta)
-	-0.5, -0.5, 0.5, 1.0, 0.0, 1.0, // 20
-	-0.5, -0.5, -0.5, 1.0, 0.0, 1.0, // 21
-	-0.5, 0.5, -0.5, 1.0, 0.0, 1.0, // 22
-	-0.5, 0.5, 0.5, 1.0, 0.0, 1.0  // 23
+	-0.5, -0.5, 0.5, 1.0, 0.0, 1.0,
+	-0.5, -0.5, -0.5, 1.0, 0.0, 1.0,
+	-0.5, 0.5, -0.5, 1.0, 0.0, 1.0,
+	-0.5, 0.5, 0.5, 1.0, 0.0, 1.0
 ]);
 
-// Cube Index Data (Corrected CCW winding)
 const cubeIndices = new Uint16Array([
-	// Front face
 	0, 1, 2, 2, 3, 0,
-
-	// Back face
 	4, 5, 6, 6, 7, 4,
-
-	// Top face 
 	8, 11, 10, 10, 9, 8,
-
-	// Bottom face
 	12, 13, 14, 14, 15, 12,
-
-	// Right face 
 	16, 17, 18, 18, 19, 16,
-
-	// Left face 
 	20, 23, 22, 22, 21, 20
 ]);
 
-// ==============================================================================
-// 7. MAIN INITIALIZATION AND GAME LOOP
-// ==============================================================================
-
 window.onload = function() {
-	/** @type {HTMLCanvasElement} */
 	const canvas = document.getElementById("canvas");
-	/** @type {WebGL2RenderingContext} */
 	const gl = canvas.getContext("webgl2");
 	if (!gl) {
 		alert("WebGL2 is not supported on this device.");
 		return;
 	}
 
-	// 1. Initialization
 	const renderer = new Renderer(gl);
 	const camera = new Camera(gl, canvas.width, canvas.height);
 	const scene = new Scene();
 	canvas.tabIndex = 0;
 
 	const input = new Input(canvas);
-	// 2. Setup Assets (Shader and Material)
+
 	const vertexShaderSource = document.getElementById("vertex-shader").textContent.trim();
 	const fragmentShaderSource = document.getElementById("fragment-shader").textContent.trim();
 	const cubeShader = new Shader(gl, vertexShaderSource, fragmentShaderSource);
 	const cubeMaterial = new Material(gl, cubeShader);
 
-	// 3. Setup Geometry (Pass Shader Locations for VAO linking)
 	const attribLocations = cubeShader.locations;
 	const cubeGeometry = new Geometry(gl, cubeVertices, cubeIndices, attribLocations);
 
-	// 4. Create Game Object and position it
 	const rotatingCube = new GameObject(gl, cubeGeometry, cubeMaterial);
-	rotatingCube.transform.position.z = -5.0; // Move cube back 5 units
+	rotatingCube.transform.position.z = -5.0;
 	scene.add(rotatingCube);
 
 	const lightCube = new GameObject(gl, cubeGeometry, cubeMaterial);
@@ -606,7 +474,6 @@ window.onload = function() {
 	lightCube.isLight = true;
 	scene.add(lightCube);
 
-	// ---- Surround the light with more cubes ----
 	const offsets = [
 		{ x: 3.0, z: 0.0 },
 		{ x: -4.0, z: 0.0 },
@@ -628,75 +495,37 @@ window.onload = function() {
 		scene.add(c);
 	}
 
-	// 5. Game Loop
 	let lastTime = 0;
 
 	function gameLoop(currentTime) {
-		// Time step
 		if (!lastTime) lastTime = currentTime;
 		const deltaTime = currentTime - lastTime;
 		lastTime = currentTime;
 
+		const dt = deltaTime * 0.001;
+
 		const keys = input.getKeys();
-		const mouse = input.getMouse();
+		const moveSpeed = 6.0 * dt;
 
-		// ==============================================
-		// 1) CAMERA ROTATION (MOUSE LOOK - PIVOT IN PLACE)
-		// ==============================================
-		if (input.isPointerLocked()) {
-			const sensitivity = 0.003;
-
-			const dx = mouse.get("dx") || 0;
-			const dy = mouse.get("dy") || 0;
-
-			// Mouse ONLY changes yaw/pitch
-			camera.yaw += dx * sensitivity;  // Horizontal mouse movement
-			camera.pitch -= dy * sensitivity;  // Vertical mouse movement
-
-			// Clamp pitch
-			const maxPitch = Math.PI / 2 - 0.01;
-			if (camera.pitch > maxPitch) camera.pitch = maxPitch;
-			if (camera.pitch < -maxPitch) camera.pitch = -maxPitch;
-
-			// Clear the mouse deltas
-			mouse.set("dx", 0);
-			mouse.set("dy", 0);
-		}
-
-		// ==============================================
-		// 2) CAMERA TRANSLATION (WASD - FORWARD/STRAFE)
-		// ==============================================
-		const moveSpeed = 0.02;
-
-		let moveForward = 0; // W/S
-		let moveRight = 0;   // D/A (Strafe Right/Left)
+		let moveForward = 0;
+		let moveRight = 0;
 
 		if (keys.get("w")) moveForward += 1;
 		if (keys.get("s")) moveForward -= 1;
 
-		if (keys.get("d")) moveRight += 1; // Strafe Right
-		if (keys.get("a")) moveRight -= 1; // Strafe Left
-
+		if (keys.get("d")) moveRight += 1;
+		if (keys.get("a")) moveRight -= 1;
 
 		if (moveForward !== 0 || moveRight !== 0) {
-			// Calculate direction vectors based on camera's current yaw
-			const yaw = camera.yaw;
-			const cosYaw = Math.cos(yaw);
-			const sinYaw = Math.sin(yaw);
+			const forwardX = camera.forward.x;
+			const forwardZ = camera.forward.z;
 
-			// Forward vector (on XZ plane)
-			const forwardX = sinYaw;
-			const forwardZ = -cosYaw;
+			const rightX = -forwardZ;
+			const rightZ = forwardX;
 
-			// Right (Strafe) vector
-			const rightX = cosYaw;
-			const rightZ = sinYaw;
-
-			// Combine forward/right inputs to get the final world-space direction vector
 			let dirX = forwardX * moveForward + rightX * moveRight;
 			let dirZ = forwardZ * moveForward + rightZ * moveRight;
 
-			// Normalize so diagonal isn't faster
 			const len = Math.hypot(dirX, dirZ);
 			if (len > 0) {
 				dirX /= len;
@@ -705,26 +534,24 @@ window.onload = function() {
 				const deltaX = dirX * moveSpeed;
 				const deltaZ = dirZ * moveSpeed;
 
-				// Apply X movement with collision check
-				const tryX = camera.position.x + deltaX;
-				if (!cameraCollides(tryX, camera.position.z, camera.position.y, scene)) {
-					camera.position.x = tryX;
+				const targetX = camera.position.x + deltaX;
+				const targetZ = camera.position.z + deltaZ;
+
+				const hit = cameraCollides(targetX, targetZ, camera.position.y, scene);
+				if (hit) {
+					hit.transform.position.x += deltaX;
+					hit.transform.position.z += deltaZ;
+					hit.transform.recalculateModelMatrix();
 				}
 
-				// Apply Z movement with collision check
-				const tryZ = camera.position.z + deltaZ;
-				if (!cameraCollides(camera.position.x, tryZ, camera.position.y, scene)) {
-					camera.position.z = tryZ;
-				}
+				camera.position.x = targetX;
+				camera.position.z = targetZ;
 			}
 		}
 
-		// ===== 3) UPDATE VIEW MATRIX AND DRAW =====
-		// This must run after all position/rotation updates
 		camera.recalculateViewMatrix();
 		scene.update(deltaTime);
 
-		// Use the lightCube as the point light
 		const lightWorldPos = lightCube.transform.position;
 		const lightPosView = multiplyMatrixAndPoint(camera.viewMatrix, lightWorldPos);
 
@@ -734,4 +561,4 @@ window.onload = function() {
 	}
 
 	requestAnimationFrame(gameLoop);
-}
+};

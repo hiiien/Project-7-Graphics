@@ -12,7 +12,6 @@
 			justify-content: center;
 			align-items: center;
 			min-height: 100vh;
-			/* Add this */
 			background-color: dimgrey;
 		}
 
@@ -20,24 +19,83 @@
 			border: 1px solid black;
 		}
 	</style>
+
+	<!-- Vertex Shader (WebGL2 / GLSL ES 3.00) -->
 	<script id="vertex-shader" type="x-shader/x-vertex">
-		#version 300 es
-		layout(location = 0) in vec2 a_position;
+#version 300 es
+precision highp float;
 
-		void main() {
-		    gl_Position = vec4(a_position, 0.0, 1.0);
-		}
-	</script>
+in vec3 a_position;
+in vec3 a_color;
+
+uniform mat4 u_modelViewMatrix;
+uniform mat4 u_projectionMatrix;
+
+out vec3 v_color;
+out vec3 v_fragPos;   // position in VIEW space
+
+void main() {
+    // Transform to view space
+    vec4 viewPos = u_modelViewMatrix * vec4(a_position, 1.0);
+    v_fragPos = viewPos.xyz;
+    v_color = a_color;
+
+    gl_Position = u_projectionMatrix * viewPos;
+}
+  </script>
+
+	<!-- Fragment Shader (WebGL2 / GLSL ES 3.00) -->
 	<script id="fragment-shader" type="x-shader/x-fragment">
-		#version 300 es
-		precision mediump float;
+#version 300 es
+precision highp float;
 
-		out vec4 outColor;
+in vec3 v_color;
+in vec3 v_fragPos;
 
-		void main() {
-		    outColor = vec4(1.0, 0.0, 0.5, 1.0);
-		}
-	</script>
+uniform vec3 u_lightPosView;  // light position in VIEW space
+uniform int  u_isLight;       // 1 if this fragment is from the light cube
+
+out vec4 outColor;
+
+void main() {
+    // Draw the light cube itself as bright white (emissive)
+    if (u_isLight == 1) {
+        outColor = vec4(1.2, 1.2, 1.2, 1.0);  // slightly "hot" white
+        return;
+    }
+
+    // --- 1) Normal from derivatives (same as before) ---
+    vec3 dx = dFdx(v_fragPos);
+    vec3 dy = dFdy(v_fragPos);
+    vec3 normal = normalize(cross(dx, dy));
+
+    // --- 2) Vector to light + distance ---
+    vec3 toLight = u_lightPosView - v_fragPos;
+    float dist   = length(toLight);
+
+    // Avoid division by zero
+    vec3 lightDir = dist > 0.0 ? toLight / dist : vec3(0.0, 0.0, 0.0);
+
+    // --- 3) Lambertian diffuse ---
+    float diff = max(dot(normal, lightDir), 0.0);
+
+    // --- 4) Distance attenuation ---
+    // tweak these constants to shape the falloff
+    float constant  = 1.0;
+    float linear    = 0.2;
+    float quadratic = 0.1;
+
+    float attenuation = 1.0 / (constant + linear * dist + quadratic * dist * dist);
+
+    // --- 5) Final color ---
+    vec3 baseColor = v_color;
+
+    vec3 ambient = 0.15 * baseColor;                    // soft base light
+    vec3 diffuse = diff * baseColor * attenuation;      // fades with distance
+
+    outColor = vec4(ambient + diffuse, 1.0);
+}
+</script>
 </head>
 
 <body>

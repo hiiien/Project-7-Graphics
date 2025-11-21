@@ -1,3 +1,7 @@
+function toRad(deg) {
+	return deg * (Math.PI / 180);
+}
+
 function scaleMatrix(sx, sy, sz) {
 	return new Float32Array([
 		sx, 0, 0, 0,
@@ -163,13 +167,33 @@ class Camera {
 		this.projectionMatrix = perspectiveMatrix(this.fov, this.aspect, this.near, this.far);
 
 		this.position = createVec3(0, 0, 5);
+		this.pitch = 0;
+		this.yaw = 0;
 		this.forward = createVec3(0, 0, -1);
 		this.up = createVec3(0, 1, 0);
 
 		this.recalculateViewMatrix();
 	}
 
-	recalculateViewMatrix() {
+	recalculateViewMatrix(offsetX = 0, offsetY = 0) {
+		let sensitivity = 0.1;
+		offsetX *= sensitivity;
+		offsetY *= sensitivity;
+
+		this.yaw += offsetX;
+		this.pitch += offsetY;
+
+		this.pitch = Math.max(-89, Math.min(89, this.pitch));
+
+		const radYaw = this.yaw * (Math.PI / 180);
+		const radPitch = this.pitch * (Math.PI / 180);
+
+		this.forward = createVec3(
+			Math.cos(radPitch) * Math.sin(radYaw),
+			Math.sin(radPitch),
+			-Math.cos(radPitch) * Math.cos(radYaw)
+		);
+
 		const center = {
 			x: this.position.x + this.forward.x,
 			y: this.position.y + this.forward.y,
@@ -177,6 +201,7 @@ class Camera {
 		};
 
 		this.viewMatrix = lookAt(this.position, center, this.up);
+		console.log(this.viewMatrix)
 	}
 }
 
@@ -213,6 +238,9 @@ class Shader {
 			projectionMatrix: gl.getUniformLocation(this.program, "u_projectionMatrix"),
 			lightPosView: gl.getUniformLocation(this.program, "u_lightPosView"),
 			isLight: gl.getUniformLocation(this.program, "u_isLight"),
+			texCoord: gl.getAttribLocation(this.program, "a_texCoord"),
+			sampler: gl.getUniformLocation(this.program, "u_texture"),
+
 		};
 	}
 	activate() {
@@ -261,11 +289,17 @@ class VAO {
 
 class Input {
 	constructor(canvas) {
+		/** @type {HTMLCanvasElement} */
 		this.canvas = canvas;
+		this.mouseDeltaX = 0;
+		this.mouseDeltaY = 0;
+		this.lastMousePos = { x: 0, y: 0 };
 		this.keys = new Map();
 
 		window.addEventListener("keydown", this.onKeyDown.bind(this));
 		window.addEventListener("keyup", this.onKeyUp.bind(this));
+		window.addEventListener("mousemove", this.onMouseMove.bind(this));
+		window.addEventListener("click", this.onMouseClick.bind(this));
 	}
 
 	getKeys() {
@@ -277,6 +311,35 @@ class Input {
 	}
 	onKeyUp(event) {
 		this.keys.set(event.key.toLowerCase(), false);
+	}
+
+	onMouseMove(event) {
+		this.mouseDeltaX = event.movementX;
+		this.mouseDeltaY = event.movementY;
+	}
+
+	getChangeInMousePos() {
+		const dx = this.mouseDeltaX || 0;
+		const dy = this.mouseDeltaY || 0;
+
+		this.mouseDeltaX = 0;
+		this.mouseDeltaY = 0;
+
+		return { x: dx, y: dy };
+	}
+
+	async onMouseClick(event) {
+		const rect = this.canvas.getBoundingClientRect();
+		if (
+			event.clientX < rect.left ||
+			event.clientX > rect.right ||
+			event.clientY < rect.top ||
+			event.clientY > rect.bottom
+		) {
+			return;
+		}
+		await this.canvas.requestPointerLock();
+
 	}
 }
 
@@ -292,11 +355,12 @@ class Geometry {
 		this.vao.bind();
 		this.ebo.bind();
 
-		const stride = 6 * Float32Array.BYTES_PER_ELEMENT;
+		const stride = 8 * Float32Array.BYTES_PER_ELEMENT;
 		const colorOffset = 3 * Float32Array.BYTES_PER_ELEMENT;
 
 		this.vao.linkAttrib(this.vbo, attribLocations.position, 3, gl.FLOAT, stride, 0);
 		this.vao.linkAttrib(this.vbo, attribLocations.color, 3, gl.FLOAT, stride, colorOffset);
+		this.vao.linkAttrib(this.vbo, attribLocations)
 
 		this.vao.unbind();
 		this.ebo.unbind();
@@ -549,7 +613,8 @@ window.onload = function() {
 			}
 		}
 
-		camera.recalculateViewMatrix();
+		let { x, y } = input.getChangeInMousePos();
+		camera.recalculateViewMatrix(x, y);
 		scene.update(deltaTime);
 
 		const lightWorldPos = lightCube.transform.position;
